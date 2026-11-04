@@ -1,0 +1,39 @@
+{
+  "schema": "INACTIVE_HOSTED_TOOLCHAIN_PLAN_V1",
+  "asset": {
+    "name": "PowerShell-7.6.5-win-x64.zip",
+    "bytes": 106319290,
+    "sha256": "32eb8f6cdce08f86e987d625a2733e54ac3e289ae7e1621b14c0b5bcec2434ea",
+    "url": "https://github.com/PowerShell/PowerShell/releases/download/v7.6.5/PowerShell-7.6.5-win-x64.zip",
+    "id": 514628305
+  },
+  "runner": {
+    "url": "https://github.com/actions/runner-images/blob/main/images/windows/Windows2025-Readme.md",
+    "image_version": "20261021.299.1",
+    "powershell": "7.6.7",
+    "current_pinned_powershell": "7.6.5",
+    "default_image_matches": false
+  },
+  "action_pins": {
+    "checkout": "11d5960a326750d5838078e36cf38b85af677262",
+    "upload_artifact": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+    "signing": "f6d04783b4569d051e0c80105fe66e82819d0092"
+  },
+  "current_toolchain_sha256": "20bee0d5c98f17bd341e80db7c72a1459ebfb60db7d09986807837a83a0d69ae",
+  "archive_contents_match": null,
+  "hosted_execution": false,
+  "provider_origin_verified": false,
+  "setup_allocation": null,
+  "setup_requires": [
+    "bounded CPU and wall",
+    "archive plus expanded allocated/logical storage and file count",
+    "exact downloaded inner toolchain identities",
+    "all signing-predecessor jobs GitHub-hosted"
+  ],
+  "local_compile_limits": {
+    "cpu_seconds": 6,
+    "wall_seconds": 10,
+    "observed_memory_bytes": 536870912
+  },
+  "download_allowed_now": false
+}

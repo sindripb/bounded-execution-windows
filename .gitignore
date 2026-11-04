@@ -1,0 +1,5 @@
+artifacts/
+*.pfx
+*.p12
+*.key
+*.log

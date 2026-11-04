@@ -1,0 +1,74 @@
+# INACTIVE REVIEW TEMPLATE: not invoked by any local preparation command.
+# The caller must obtain a finite hosted setup allocation before activating it.
+param(
+ [Parameter(Mandatory)][string]$Destination,
+ [Parameter(Mandatory)][ValidateRange(1,3600)][int]$ApprovedCpuSeconds,
+ [Parameter(Mandatory)][ValidateRange(1,3600)][int]$ApprovedWallSeconds,
+ [Parameter(Mandatory)][ValidateRange(1,100000)][int]$ApprovedFileCeiling,
+ [Parameter(Mandatory)][ValidateRange(106319290,2147483648)][long]$ApprovedStorageBytes
+)
+$ErrorActionPreference='Stop';Set-StrictMode -Version 3
+if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted'){throw 'HostedOriginRequired'}
+$project=Split-Path -Parent $PSScriptRoot
+$plan=Get-Content -LiteralPath (Join-Path $project 'HOSTED_TOOLCHAIN_PLAN.json') -Raw|ConvertFrom-Json
+$asset=$plan.asset
+$watch=[Diagnostics.Stopwatch]::StartNew();$process=[Diagnostics.Process]::GetCurrentProcess()
+function Check {
+ $process.Refresh()
+ if($process.TotalProcessorTime.TotalSeconds -ge $ApprovedCpuSeconds -or $watch.Elapsed.TotalSeconds -ge $ApprovedWallSeconds -or $process.PeakPagedMemorySize64 -ge 536870912 -or $process.PeakWorkingSet64 -ge 536870912){throw 'HostedSetupLimit'}
+}
+$dest=[IO.Path]::GetFullPath($Destination);$parent=[IO.DirectoryInfo]::new([IO.Path]::GetDirectoryName($dest))
+for($p=$parent;$null -ne $p;$p=$p.Parent){if(-not $p.Exists -or ($p.Attributes-band[IO.FileAttributes]::ReparsePoint)){throw 'UnsafeSetupParent'}}
+if(Test-Path -LiteralPath $dest){throw 'FreshSetupOnly'}
+[void][IO.Directory]::CreateDirectory($dest)
+$archive=Join-Path $dest 'official.zip';$runtime=Join-Path $dest 'runtime'
+$client=[Net.Http.HttpClient]::new();$client.Timeout=[TimeSpan]::FromSeconds($ApprovedWallSeconds)
+$cancel=[Threading.CancellationTokenSource]::new([TimeSpan]::FromSeconds($ApprovedWallSeconds))
+try {
+ $response=$client.GetAsync($asset.url,[Net.Http.HttpCompletionOption]::ResponseHeadersRead,$cancel.Token).GetAwaiter().GetResult()
+ try {
+  $response.EnsureSuccessStatusCode()|Out-Null
+  if($response.RequestMessage.RequestUri.Scheme -cne 'https'){throw 'HttpsRequired'}
+  $input=$response.Content.ReadAsStreamAsync($cancel.Token).GetAwaiter().GetResult()
+  $output=[IO.File]::Open($archive,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+  try {
+   $buffer=[byte[]]::new(65536);[long]$written=0
+   while(($n=$input.ReadAsync($buffer,0,$buffer.Length,$cancel.Token).GetAwaiter().GetResult()) -gt 0){
+    $written+=$n;if($written -gt $asset.bytes -or $written+65536 -gt $ApprovedStorageBytes){throw 'DownloadByteLimit'}
+    $output.Write($buffer,0,$n);Check
+   };$output.Flush($true)
+  }finally{$output.Dispose();$input.Dispose()}
+ }finally{$response.Dispose()}
+ if($written -ne $asset.bytes -or (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -cne $asset.sha256){throw 'OfficialArchiveIdentity'}
+ $zip=[IO.Compression.ZipFile]::OpenRead($archive)
+ try {
+  $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+  [long]$total=$written+65536;[int]$files=1
+  foreach($entry in $zip.Entries){
+   $name=$entry.FullName.Replace('\','/');$parts=$name.TrimEnd('/').Split('/')
+   if($name.StartsWith('/') -or $name.Contains(':') -or @($parts|Where-Object {$_ -in @('','..','.') -or $_.TrimEnd(' ','.') -cne $_}).Count -gt 0 -or -not $seen.Add($name.TrimEnd('/'))){throw 'UnsafeZipName'}
+   if((($entry.ExternalAttributes -shr 16)-band 61440) -eq 40960){throw 'ZipSymlink'}
+   $target=[IO.Path]::GetFullPath((Join-Path $runtime $name))
+   if(-not $target.StartsWith($runtime+[IO.Path]::DirectorySeparatorChar,[StringComparison]::OrdinalIgnoreCase)){throw 'ZipEscape'}
+   if(-not $name.EndsWith('/')){$total+=$entry.Length;$files++}
+   if($total -gt $ApprovedStorageBytes -or $files+2 -gt $ApprovedFileCeiling){throw 'ExpandedSetupLimit'}
+  }
+  [void][IO.Directory]::CreateDirectory($runtime)
+  foreach($entry in $zip.Entries){
+   $target=[IO.Path]::GetFullPath((Join-Path $runtime $entry.FullName))
+   if($entry.FullName.EndsWith('/')){[void][IO.Directory]::CreateDirectory($target);continue}
+   [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))
+   $input=$entry.Open();$output=[IO.File]::Open($target,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+   try {
+    [long]$copied=0
+    while(($n=$input.Read($buffer,0,$buffer.Length)) -gt 0){$copied+=$n;if($copied -gt $entry.Length){throw 'ZipLength'};$output.Write($buffer,0,$n);Check}
+    if($copied -ne $entry.Length){throw 'ZipLength'};$output.Flush($true)
+   }finally{$output.Dispose();$input.Dispose()}
+  }
+ }finally{$zip.Dispose()}
+ & (Join-Path $PSScriptRoot 'verify-toolchain.ps1') -RuntimeDirectory $runtime
+ Check
+ # No launch here. The following build step uses the verified pwsh.exe explicitly.
+ "PINNED_PWSH_HOME=$runtime"|Out-File -LiteralPath $env:GITHUB_ENV -Append -Encoding utf8
+}finally{$cancel.Dispose();$client.Dispose()}
+# Preserve incomplete files on failure. No retry, unsigned load or trust changes.

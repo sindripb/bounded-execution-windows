@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Provider-review draft. Fixed membership; PolicyTests requires separate provider acceptance. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="Compact/BoundedExecution.Windows.dll" product-name="Bounded Execution Windows" product-version="0.1.0-preview.1" file-version="0.1.0.0">
+      <authenticode-sign />
+    </pe-file>
+    <pe-file path="Extended/BoundedExecution.Windows.dll" product-name="Bounded Execution Windows" product-version="0.1.0-preview.1" file-version="0.1.0.0">
+      <authenticode-sign />
+    </pe-file>
+    <pe-file path="PolicyTests/BoundedExecution.Windows.dll" product-name="Bounded Execution Windows" product-version="0.1.0-preview.1" file-version="0.1.0.0">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

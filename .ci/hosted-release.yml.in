@@ -1,0 +1,102 @@
+{
+  "name": "Reviewed library build and optional signing",
+  "on": {
+    "workflow_dispatch": {
+      "inputs": {
+        "operation": {
+          "type": "choice",
+          "options": [
+            "build-only",
+            "request-signing"
+          ],
+          "default": "build-only",
+          "required": true
+        },
+        "source_manifest_sha256": {
+          "type": "string",
+          "required": true
+        }
+      }
+    }
+  },
+  "permissions": {
+    "contents": "read",
+    "actions": "read"
+  },
+  "concurrency": {
+    "group": "reviewed-library-release",
+    "cancel-in-progress": false
+  },
+  "jobs": {
+    "build": {
+      "runs-on": "windows-2025",
+      "environment": "reviewed-signing-release",
+      "timeout-minutes": 10,
+      "steps": [
+        {
+          "name": "Checkout exact requested revision",
+          "uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "with": {
+            "ref": "${{ github.sha }}",
+            "persist-credentials": false,
+            "fetch-depth": 1,
+            "submodules": false,
+            "lfs": false
+          }
+        },
+        {
+          "name": "Require reviewed hosted setup",
+          "shell": "pwsh",
+          "run": "if($env:GITHUB_ACTIONS -cne 'true' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted'){throw 'HostedOriginRequired'}\n# Activation review must supply the finite provisioner/claim; an environment\n# variable alone is not authority. This hard stop prevents an accidental run.\nthrow 'HostedFiniteProvisioningNotActivated'"
+        },
+        {
+          "name": "Verify exact source and toolchain",
+          "shell": "pwsh",
+          "env": {
+            "REVIEWED_MANIFEST": "${{ inputs.source_manifest_sha256 }}"
+          },
+          "run": ". ./.ci/release-checks.ps1\n$null=Assert-ReleaseTree $env:GITHUB_WORKSPACE $env:REVIEWED_MANIFEST\nif(-not $env:PINNED_PWSH_HOME){throw 'PinnedHostedToolchainMissing'}\n./.ci/verify-toolchain.ps1 -RuntimeDirectory $env:PINNED_PWSH_HOME"
+        },
+        {
+          "name": "Compile only the three declared library artifacts",
+          "shell": "pwsh",
+          "run": "$builds=Join-Path $env:RUNNER_TEMP 'reviewed-library-builds'\nif(Test-Path -LiteralPath $builds){throw 'FreshBuildScopeRequired'}\n[void][IO.Directory]::CreateDirectory($builds)\nforeach($profile in @('Compact','Extended')){\n  & \"$env:PINNED_PWSH_HOME/pwsh.exe\" -NoLogo -NoProfile -NonInteractive -File ./build.ps1 -Profile $profile -OutputDirectory \"$builds/$profile\"\n  if($LASTEXITCODE -ne 0){throw 'CompileFailurePreserved'}\n}\n& \"$env:PINNED_PWSH_HOME/pwsh.exe\" -NoLogo -NoProfile -NonInteractive -File ./build.ps1 -Profile Compact -IncludeContractTests -OutputDirectory \"$builds/PolicyTests\"\nif($LASTEXITCODE -ne 0){throw 'PolicyTestCompileFailurePreserved'}"
+        },
+        {
+          "name": "Verify receipts and exact artifact membership",
+          "shell": "pwsh",
+          "env": {
+            "REVIEWED_MANIFEST": "${{ inputs.source_manifest_sha256 }}"
+          },
+          "run": "./.ci/stage-artifacts.ps1 -ProjectRoot $env:GITHUB_WORKSPACE -BuildRoot \"$env:RUNNER_TEMP/reviewed-library-builds\" -Destination \"$env:RUNNER_TEMP/reviewed-unsigned\" -ExpectedManifestSha256 $env:REVIEWED_MANIFEST"
+        },
+        {
+          "name": "Upload only verified library files",
+          "id": "unsigned",
+          "uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+          "with": {
+            "name": "reviewed-unsigned-libraries",
+            "path": "${{ runner.temp }}/reviewed-unsigned/",
+            "if-no-files-found": "error",
+            "retention-days": 1,
+            "include-hidden-files": false
+          }
+        },
+        {
+          "name": "Submit separately approved signing request",
+          "if": "${{ inputs.operation == 'request-signing' }}",
+          "uses": "signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092",
+          "with": {
+            "api-token": "${{ secrets.SIGNPATH_API_TOKEN }}",
+            "organization-id": "${{ vars.SIGNPATH_ORGANIZATION_ID }}",
+            "project-slug": "${{ vars.SIGNPATH_PROJECT_SLUG }}",
+            "signing-policy-slug": "${{ vars.SIGNPATH_POLICY_SLUG }}",
+            "artifact-configuration-slug": "${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION }}",
+            "github-artifact-id": "${{ steps.unsigned.outputs.artifact-id }}",
+            "wait-for-completion": false
+          }
+        }
+      ]
+    }
+  }
+}
