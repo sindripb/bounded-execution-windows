@@ -31,7 +31,8 @@ function Assert-ReleaseTree([string]$ProjectRoot,[string]$ExpectedManifestSha256
     foreach($name in $manifest.files.Keys) {
         Assert-ReleaseMember $name
         if(-not $seen.Add($name) -or $name -eq 'source-manifest.json' -or $name.Split('/')[0] -eq '.git'){throw 'RepeatedOrExcludedReleaseMember'}
-        if((Get-ReleaseHash (Join-Path $root $name)) -cne $manifest.files[$name]){throw 'ReleaseMemberHashMismatch'}
+        $actualHash=Get-ReleaseHash (Join-Path $root $name)
+        if($actualHash -cne $manifest.files[$name]){throw ('ReleaseMemberHashMismatch: '+$name+' expected='+$manifest.files[$name]+' actual='+$actualHash)}
     }
     $actual=@(Get-ChildItem -LiteralPath $root -Recurse -Force -File | ForEach-Object {
         $n=[IO.Path]::GetRelativePath($root,$_.FullName).Replace('\','/')

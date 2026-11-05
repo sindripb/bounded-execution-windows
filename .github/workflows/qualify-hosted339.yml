@@ -1,0 +1,80 @@
+{
+  "name": "Finite unsigned helper qualification339",
+  "on": {
+    "workflow_dispatch": {
+      "inputs": {
+        "claim_sha256": {
+          "required": true,
+          "type": "string"
+        },
+        "approved_at": {
+          "required": true,
+          "type": "string"
+        },
+        "expires_at": {
+          "required": true,
+          "type": "string"
+        },
+        "source_manifest_sha256": {
+          "required": true,
+          "type": "string"
+        }
+      }
+    }
+  },
+  "permissions": {
+    "contents": "read",
+    "actions": "read"
+  },
+  "concurrency": {
+    "group": "finite-helper339",
+    "cancel-in-progress": false
+  },
+  "jobs": {
+    "qualify": {
+      "runs-on": "windows-2025",
+      "timeout-minutes": 5,
+      "steps": [
+        {
+          "uses": "actions/checkout@11d5960a326750d5838078e36cf38b85af677262",
+          "with": {
+            "ref": "${{ github.sha }}",
+            "persist-credentials": false,
+            "fetch-depth": 1
+          }
+        },
+        {
+          "name": "One finite unsigned build",
+          "id": "build",
+          "shell": "pwsh",
+          "env": {
+            "OWNER_CLAIM_SHA256": "${{ inputs.claim_sha256 }}",
+            "OWNER_APPROVED_AT": "${{ inputs.approved_at }}",
+            "OWNER_EXPIRES_AT": "${{ inputs.expires_at }}",
+            "EXPECTED_MANIFEST": "${{ inputs.source_manifest_sha256 }}"
+          },
+          "run": "./.ci/run-hosted.ps1"
+        },
+        {
+          "name": "Bound available evidence before upload",
+          "id": "evidence",
+          "if": "${{ always() }}",
+          "shell": "pwsh",
+          "run": "$ErrorActionPreference='Stop'\n$watch=[Diagnostics.Stopwatch]::StartNew();$process=[Diagnostics.Process]::GetCurrentProcess()\n$root=Join-Path $env:RUNNER_TEMP 'hosted335/evidence'\nif(Test-Path -LiteralPath $root){\n  $entries=@(Get-ChildItem -LiteralPath $root -Force -Recurse)\n  if(@($entries|Where-Object { $_.Attributes-band[IO.FileAttributes]::ReparsePoint }).Count){throw 'ReparseEvidence'}\n  $files=@($entries|Where-Object {-not $_.PSIsContainer})\n  if($files.Count -gt 64 -or ($files|Measure-Object Length -Sum).Sum -gt 1048576){throw 'EvidenceScopeExceeded'}\n  $process.Refresh()\n  if($process.TotalProcessorTime.TotalSeconds -ge 6 -or $watch.Elapsed.TotalSeconds -ge 10 -or $process.PeakPagedMemorySize64 -ge 536870912 -or $process.PeakWorkingSet64 -ge 536870912){throw 'EvidenceGuardResourceLimit'}\n  'ready=true'|Out-File -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8 -Append\n}"
+        },
+        {
+          "name": "Preserve bounded unsigned evidence",
+          "if": "${{ always() && steps.evidence.outputs.ready == 'true' }}",
+          "uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+          "with": {
+            "name": "unsigned-helper335-${{ github.run_id }}",
+            "path": "${{ runner.temp }}/hosted335/evidence/",
+            "retention-days": 1,
+            "if-no-files-found": "error",
+            "include-hidden-files": false
+          }
+        }
+      ]
+    }
+  }
+}

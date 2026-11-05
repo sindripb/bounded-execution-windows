@@ -51,7 +51,7 @@ function Observe-Storage([string]$Label) {
 }
 $observations=[Collections.Generic.List[object]]::new()
 try{
- $null=Assert-ReleaseTree $root $env:EXPECTED_MANIFEST;Check
+ $phase='source-readback';$null=Assert-ReleaseTree $root $env:EXPECTED_MANIFEST;Check
  $phase='official-toolchain';$setup=& (Join-Path $PSScriptRoot 'provision-hosted.ps1') -Destination (Join-Path $out 'setup') -Limits $limits -Check ${function:Check}
  $phase='setup-storage';$observations.Add((Observe-Storage 'setup'));Check
  $builds=Join-Path $out 'builds';[void][IO.Directory]::CreateDirectory($builds)
