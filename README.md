@@ -1,4 +1,7 @@
-# Bounded Execution Windows â€” private release preview
+# Bounded Execution Windows — unsigned developer preview
+
+Published under MIT. The original reviewed release is v0.1.0-preview.1. This candidate adds a finite unsigned hosted-build qualification; no hosted PASS, signing or runtime qualification is claimed. Prepublication notices below and in the original release are historical review records.
+
 
 A Windows/.NET helper library for process accounting, held-handle identity checks,
 strict file publication, runtime-scratch classification and evidence readback.
