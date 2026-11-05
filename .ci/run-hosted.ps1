@@ -19,7 +19,9 @@ function Check {
 }
 function Observe-Storage([string]$Label) {
  $priorSecondary=$secondary.Count
- $python=(Get-Command python -CommandType Application -ErrorAction Stop).Source
+ $pythonCommand=Get-Command python -CommandType Application -All -ErrorAction Stop | Select-Object -First 1
+ if($null -eq $pythonCommand -or $pythonCommand.Source -isnot [string] -or [string]::IsNullOrWhiteSpace($pythonCommand.Source) -or -not [IO.Path]::IsPathFullyQualified($pythonCommand.Source)){throw 'PythonApplicationResolutionFailed'}
+ $python=$pythonCommand.Source
  Assert-HostedParent $python;$runtimeHash=Get-ReleaseHash $python
  $receipt=Join-Path $evidence ('STORAGE-'+$Label+'.json')
  $info=[Diagnostics.ProcessStartInfo]::new($python);$info.UseShellExecute=$false;$info.CreateNoWindow=$true;$info.RedirectStandardError=$true
